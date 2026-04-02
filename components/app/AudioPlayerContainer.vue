@@ -273,6 +273,11 @@ export default {
                 episodeId: this.serverEpisodeId || episodeId
               })
             }
+
+            // Auto-load series queue for non-episode items not already in a queue
+            if (!episodeId && !this.serverEpisodeId) {
+              this.tryAutoLoadSeriesQueue(this.serverLibraryItemId || libraryItemId)
+            }
           }
         })
         .catch((error) => {
@@ -345,6 +350,84 @@ export default {
       if (payload) {
         this.$store.commit('setPlayerIsStartingPlayback', payload.episodeId || payload.libraryItemId)
         this.$eventBus.$emit('play-item', payload)
+      }
+    },
+    /**
+     * Auto-load a series queue when a book is played individually (not from queue auto-advance).
+     * If the item is already in the active queue, skip (handles queue-driven plays and
+     * plays from collection/playlist/series pages that load their own queue first).
+     *
+     * @param {string} serverLibraryItemId - The server library item ID of the book being played
+     */
+    async tryAutoLoadSeriesQueue(serverLibraryItemId) {
+      if (!serverLibraryItemId) return
+
+      // If the item is already in the active queue, don't override it
+      if (this.$store.state.queue.isActive && this.$store.getters['queue/isItemInQueue'](serverLibraryItemId)) {
+        return
+      }
+
+      try {
+        // Wait for the playback session to be committed to the store
+        await this.$nextTick()
+
+        // Try to get series info from the current playback session's mediaMetadata
+        let seriesArray = null
+        const session = this.$store.state.currentPlaybackSession
+        if (session?.mediaMetadata?.series?.length) {
+          seriesArray = session.mediaMetadata.series
+        }
+
+        // Fallback: fetch item from server to get series info
+        if (!seriesArray) {
+          const item = await this.$nativeHttp.get(`/api/items/${serverLibraryItemId}`).catch((error) => {
+            console.error('[AudioPlayerContainer] Failed to fetch item for series lookup', error)
+            return null
+          })
+          if (item?.media?.metadata?.series?.length) {
+            seriesArray = item.media.metadata.series
+          }
+        }
+
+        if (!seriesArray || !seriesArray.length) return
+
+        // Use the first series the book belongs to
+        const seriesRef = seriesArray[0]
+        console.log(`[AudioPlayerContainer] Auto-loading series queue for "${seriesRef.name}" (${seriesRef.id})`)
+
+        // Fetch the full series object with all books
+        const series = await this.$nativeHttp.get(`/api/series/${seriesRef.id}`).catch((error) => {
+          console.error('[AudioPlayerContainer] Failed to fetch series', error)
+          return null
+        })
+        if (!series?.books?.length) return
+
+        // Attach local library items to series books (same pattern as series page asyncData)
+        const localLibraryItems = (await this.$db.getLocalLibraryItems('book')) || []
+        if (localLibraryItems.length) {
+          series.books.forEach((book) => {
+            const matchingLocalLibraryItem = localLibraryItems.find((lli) => lli.libraryItemId === book.id)
+            if (matchingLocalLibraryItem) {
+              book.localLibraryItem = matchingLocalLibraryItem
+            }
+          })
+        }
+
+        // Find the index of the current book in the playable books list
+        const playableBooks = (series.books || []).filter((book) => {
+          return !book.isMissing && !book.isInvalid && book.media?.tracks?.length
+        })
+        const startIndex = playableBooks.findIndex((book) => book.id === serverLibraryItemId)
+        if (startIndex < 0) {
+          console.log('[AudioPlayerContainer] Current book not found in series playable books, skipping auto-load')
+          return
+        }
+
+        // Load the series as queue with current book as start index
+        await this.$store.dispatch('queue/loadSeriesAsQueue', { series, startIndex })
+        console.log(`[AudioPlayerContainer] Series queue loaded: "${series.name}" (${playableBooks.length} items, starting at ${startIndex})`)
+      } catch (error) {
+        console.error('[AudioPlayerContainer] Error auto-loading series queue', error)
       }
     },
     deviceFocused(hasFocus) {
