@@ -9,6 +9,9 @@
       <div v-show="showCastBtn" class="top-6 right-16 absolute cursor-pointer">
         <span class="material-symbols text-3xl" :class="coverBgIsLight && theme !== 'black' ? 'text-black' : ''" @click="castClick">{{ isCasting ? 'cast_connected' : 'cast' }}</span>
       </div>
+      <div v-if="queueIsActive" class="top-6 absolute cursor-pointer" :class="showCastBtn ? 'right-28' : 'right-16'">
+        <span class="material-symbols text-3xl" :class="{ 'text-black text-opacity-75': coverBgIsLight && theme !== 'black' }" @click="openQueueModal">queue_music</span>
+      </div>
       <div class="top-6 right-4 absolute cursor-pointer">
         <span class="material-symbols text-3xl" :class="{ 'text-black text-opacity-75': coverBgIsLight && theme !== 'black' }" @click="showMoreMenuDialog = true">more_vert</span>
       </div>
@@ -49,8 +52,19 @@
 
     <div id="playerContent" class="playerContainer w-full z-20 absolute bottom-0 left-0 right-0 p-2 pointer-events-auto transition-all" :style="{ backgroundColor: showFullscreen ? '' : coverRgb }" @click="clickContainer">
       <div v-if="showFullscreen" class="absolute bottom-4 left-0 right-0 w-full pb-4 pt-2 mx-auto px-6" style="max-width: 414px">
+        <!-- Queue info: Up Next and position -->
+        <div v-if="queueIsActive" class="flex items-center justify-between pointer-events-auto mb-2 cursor-pointer" @click="openQueueModal">
+          <p v-if="queueNextItem && queueRepeatMode !== 'repeat-one'" class="text-xs text-fg-muted truncate flex-1 mr-2">
+            <span class="uppercase tracking-wider text-[10px]">{{ $strings.LabelUpNext }}:</span> {{ queueNextItem.title }}
+          </p>
+          <p v-else class="text-xs text-fg-muted truncate flex-1 mr-2">&nbsp;</p>
+          <p class="text-xs text-fg-muted font-mono whitespace-nowrap">{{ queuePositionText }}</p>
+        </div>
+
         <div class="flex items-center justify-between pointer-events-auto">
-          <span v-if="!isPodcast && serverLibraryItemId && socketConnected" class="material-symbols text-3xl text-fg-muted cursor-pointer" :class="{ fill: bookmarks.length }" @click="$emit('showBookmarks')">bookmark</span>
+          <!-- Shuffle button (only when queue is active) -->
+          <span v-if="queueIsActive" class="material-symbols text-3xl cursor-pointer" :class="queueShuffled ? 'text-success' : 'text-fg-muted'" @click="toggleShuffle">shuffle</span>
+          <span v-else-if="!isPodcast && serverLibraryItemId && socketConnected" class="material-symbols text-3xl text-fg-muted cursor-pointer" :class="{ fill: bookmarks.length }" @click="$emit('showBookmarks')">bookmark</span>
           <!-- hidden for podcasts but still using this as a placeholder -->
           <span v-else class="material-symbols text-3xl text-white text-opacity-0">bookmark</span>
 
@@ -62,14 +76,18 @@
             <p class="text-xl font-mono text-success">{{ sleepTimeRemainingPretty }}</p>
           </div>
 
-          <span class="material-symbols text-3xl text-fg cursor-pointer" :class="chapters.length ? 'text-opacity-75' : 'text-opacity-10'" @click="clickChaptersBtn">format_list_bulleted</span>
+          <!-- Repeat button (only when queue is active) -->
+          <span v-if="queueIsActive" class="material-symbols text-3xl cursor-pointer" :class="queueRepeatMode !== 'none' ? 'text-success' : 'text-fg-muted'" @click="cycleRepeatMode">{{ repeatModeIcon }}</span>
+          <span v-else class="material-symbols text-3xl text-fg cursor-pointer" :class="chapters.length ? 'text-opacity-75' : 'text-opacity-10'" @click="clickChaptersBtn">format_list_bulleted</span>
         </div>
       </div>
       <div v-else class="w-full h-full absolute top-0 left-0 pointer-events-none" style="background: var(--gradient-minimized-audio-player)" />
 
       <div id="playerControls" class="absolute right-0 bottom-0 mx-auto" style="max-width: 414px">
         <div class="flex items-center max-w-full" :class="playerSettings.lockUi ? 'justify-center' : 'justify-between'">
-          <span v-show="showFullscreen && !playerSettings.lockUi" class="material-symbols next-icon text-fg cursor-pointer" :class="isLoading ? 'text-opacity-10' : 'text-opacity-75'" @click.stop="jumpChapterStart">first_page</span>
+          <!-- Queue skip previous (replaces chapter start when queue active) -->
+          <span v-if="showFullscreen && !playerSettings.lockUi && queueIsActive" class="material-symbols next-icon text-fg cursor-pointer" :class="queueHasPrevious && !isLoading ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="skipToPreviousInQueue">skip_previous</span>
+          <span v-else v-show="showFullscreen && !playerSettings.lockUi" class="material-symbols next-icon text-fg cursor-pointer" :class="isLoading ? 'text-opacity-10' : 'text-opacity-75'" @click.stop="jumpChapterStart">first_page</span>
           <div v-show="!playerSettings.lockUi" class="jump-icon text-fg cursor-pointer flex flex-col items-center" :class="isLoading ? 'text-opacity-10' : 'text-opacity-75'" @click.stop="jumpBackwards">
             <span class="material-symbols text-3xl leading-none">replay</span>
             <span v-if="showFullscreen" class="jump-label text-[10px] font-semibold leading-tight">{{ jumpBackwardsLabel }}</span>
@@ -84,7 +102,9 @@
             <span class="material-symbols text-3xl leading-none">forward_media</span>
             <span v-if="showFullscreen" class="jump-label text-[10px] font-semibold leading-tight">{{ jumpForwardLabel }}</span>
           </div>
-          <span v-show="showFullscreen && !playerSettings.lockUi" class="material-symbols next-icon text-fg cursor-pointer" :class="nextChapter && !isLoading ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="jumpNextChapter">last_page</span>
+          <!-- Queue skip next (replaces chapter next when queue active) -->
+          <span v-if="showFullscreen && !playerSettings.lockUi && queueIsActive" class="material-symbols next-icon text-fg cursor-pointer" :class="queueHasNext && !isLoading ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="skipToNextInQueue">skip_next</span>
+          <span v-else v-show="showFullscreen && !playerSettings.lockUi" class="material-symbols next-icon text-fg cursor-pointer" :class="nextChapter && !isLoading ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="jumpNextChapter">last_page</span>
         </div>
       </div>
 
@@ -392,6 +412,38 @@ export default {
       if (!localLibraryItem) return null
 
       return this.playbackSession.localEpisodeId ? `${localLibraryItem.id}-${this.playbackSession.localEpisodeId}` : localLibraryItem.id
+    },
+    queueIsActive() {
+      return this.$store.state.queue.isActive
+    },
+    queueHasNext() {
+      return this.$store.getters['queue/hasNext']
+    },
+    queueHasPrevious() {
+      return this.$store.getters['queue/hasPrevious']
+    },
+    queueCurrentIndex() {
+      return this.$store.state.queue.currentIndex
+    },
+    queueLength() {
+      return this.$store.getters['queue/queueLength']
+    },
+    queueShuffled() {
+      return this.$store.state.queue.shuffled
+    },
+    queueRepeatMode() {
+      return this.$store.state.queue.repeatMode
+    },
+    queueNextItem() {
+      return this.$store.getters['queue/nextItem']
+    },
+    queuePositionText() {
+      if (!this.queueIsActive || this.queueLength === 0) return ''
+      return `${this.queueCurrentIndex + 1} / ${this.queueLength}`
+    },
+    repeatModeIcon() {
+      if (this.queueRepeatMode === 'repeat-one') return 'repeat_one'
+      return 'repeat'
     }
   },
   methods: {
@@ -482,6 +534,25 @@ export default {
       } else {
         this.seek(this.currentChapter.start)
       }
+    },
+    async skipToNextInQueue() {
+      await this.$hapticsImpact()
+      if (this.isLoading || !this.queueHasNext) return
+      this.$eventBus.$emit('queue-skip-next')
+    },
+    async skipToPreviousInQueue() {
+      await this.$hapticsImpact()
+      if (this.isLoading || !this.queueHasPrevious) return
+      this.$eventBus.$emit('queue-skip-previous')
+    },
+    toggleShuffle() {
+      this.$store.dispatch('queue/toggleShuffle')
+    },
+    cycleRepeatMode() {
+      this.$store.dispatch('queue/cycleRepeatMode')
+    },
+    openQueueModal() {
+      this.$store.commit('globals/setShowQueueModal', true)
     },
     showSleepTimerModal() {
       this.$emit('showSleepTimer')
@@ -841,6 +912,7 @@ export default {
 
       if (data.playerState === 'ENDED') {
         console.log('[AudioPlayer] Playback ended')
+        this.$eventBus.$emit('playback-ended')
       }
       this.isEnded = data.playerState === 'ENDED'
 

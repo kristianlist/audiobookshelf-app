@@ -6,7 +6,7 @@
       </div>
       <div class="book-table-content h-full px-2 flex items-center">
         <div class="max-w-full">
-          <p class="truncate block text-sm">{{ bookTitle }} <span v-if="localLibraryItem" class="material-symbols text-success text-base align-text-bottom">download_done</span></p>
+          <p class="truncate block text-sm">{{ bookTitle }} <span v-if="localLibraryItem" class="material-symbols text-success text-base align-text-bottom">download_done</span> <span v-if="isOpenInPlayer" class="material-symbols text-success text-base align-text-bottom fill">graphic_eq</span></p>
           <p class="truncate block text-fg-muted text-xs">{{ bookAuthor }}</p>
           <p v-if="media.duration" class="text-xxs text-fg-muted">{{ bookDuration }}</p>
         </div>
@@ -27,6 +27,10 @@ export default {
     book: {
       type: Object,
       default: () => {}
+    },
+    index: {
+      type: Number,
+      default: 0
     }
   },
   data() {
@@ -98,17 +102,7 @@ export default {
         return
       }
 
-      this.$store.commit('setPlayerIsStartingPlayback', this.libraryItemId)
-      if (this.localLibraryItem) {
-        this.$eventBus.$emit('play-item', {
-          libraryItemId: this.localLibraryItem.id,
-          serverLibraryItemId: this.libraryItemId
-        })
-      } else {
-        this.$eventBus.$emit('play-item', {
-          libraryItemId: this.libraryItemId
-        })
-      }
+      this.$emit('playAtIndex', this.index)
     }
   },
   mounted() {}

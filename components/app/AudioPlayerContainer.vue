@@ -225,8 +225,11 @@ export default {
       if (this.$store.getters['getIsMediaStreaming'](libraryItemId, episodeId)) {
         console.log('Already streaming item', startTime)
         if (startTime !== undefined && startTime !== null) {
-          // seek to start time
-          AbsAudioPlayer.seek({ value: Math.floor(startTime) })
+          // Seek to start time and then play (needed for repeat-one: book is at ENDED position)
+          await AbsAudioPlayer.seek({ value: Math.floor(startTime) })
+          if (this.$refs.audioPlayer) {
+            this.$refs.audioPlayer.play()
+          }
         } else if (this.$refs.audioPlayer) {
           this.$refs.audioPlayer.play()
         }
@@ -261,6 +264,14 @@ export default {
               this.serverEpisodeId = episodeId
             } else {
               this.serverEpisodeId = serverEpisodeId
+            }
+
+            // Sync queue current index with the item being played
+            if (this.$store.state.queue.isActive) {
+              this.$store.dispatch('queue/syncCurrentIndex', {
+                libraryItemId: this.serverLibraryItemId || libraryItemId,
+                episodeId: this.serverEpisodeId || episodeId
+              })
             }
           }
         })
@@ -306,6 +317,36 @@ export default {
     /**
      * When device gains focus then refresh the timestamps in the audio player
      */
+    async onPlaybackEnded() {
+      const queueIsActive = this.$store.state.queue.isActive
+      if (!queueIsActive) {
+        console.log('[AudioPlayerContainer] Playback ended, no active queue')
+        return
+      }
+
+      console.log('[AudioPlayerContainer] Playback ended, advancing queue')
+      const payload = await this.$store.dispatch('queue/playNext')
+      if (payload) {
+        this.$store.commit('setPlayerIsStartingPlayback', payload.episodeId || payload.libraryItemId)
+        this.$eventBus.$emit('play-item', payload)
+      } else {
+        console.log('[AudioPlayerContainer] Queue ended, no more items')
+      }
+    },
+    async onQueueSkipNext() {
+      const payload = await this.$store.dispatch('queue/playNext')
+      if (payload) {
+        this.$store.commit('setPlayerIsStartingPlayback', payload.episodeId || payload.libraryItemId)
+        this.$eventBus.$emit('play-item', payload)
+      }
+    },
+    async onQueueSkipPrevious() {
+      const payload = await this.$store.dispatch('queue/playPrevious')
+      if (payload) {
+        this.$store.commit('setPlayerIsStartingPlayback', payload.episodeId || payload.libraryItemId)
+        this.$eventBus.$emit('play-item', payload)
+      }
+    },
     deviceFocused(hasFocus) {
       if (!this.$store.state.currentPlaybackSession) return
 
@@ -360,6 +401,9 @@ export default {
     this.playbackSpeed = this.$store.getters['user/getUserSetting']('playbackRate')
     console.log(`[AudioPlayerContainer] Init Playback Speed: ${this.playbackSpeed}`)
 
+    // Restore persisted queue state
+    this.$store.dispatch('queue/restoreQueue')
+
     this.$eventBus.$on('abs-ui-ready', this.onReady)
     this.$eventBus.$on('play-item', this.playLibraryItem)
     this.$eventBus.$on('pause-item', this.pauseItem)
@@ -367,6 +411,9 @@ export default {
     this.$eventBus.$on('cast-local-item', this.castLocalItem)
     this.$eventBus.$on('user-settings', this.settingsUpdated)
     this.$eventBus.$on('playback-time-update', this.playbackTimeUpdate)
+    this.$eventBus.$on('playback-ended', this.onPlaybackEnded)
+    this.$eventBus.$on('queue-skip-next', this.onQueueSkipNext)
+    this.$eventBus.$on('queue-skip-previous', this.onQueueSkipPrevious)
     this.$eventBus.$on('device-focus-update', this.deviceFocused)
   },
   beforeDestroy() {
@@ -382,6 +429,9 @@ export default {
     this.$eventBus.$off('cast-local-item', this.castLocalItem)
     this.$eventBus.$off('user-settings', this.settingsUpdated)
     this.$eventBus.$off('playback-time-update', this.playbackTimeUpdate)
+    this.$eventBus.$off('playback-ended', this.onPlaybackEnded)
+    this.$eventBus.$off('queue-skip-next', this.onQueueSkipNext)
+    this.$eventBus.$off('queue-skip-previous', this.onQueueSkipPrevious)
     this.$eventBus.$off('device-focus-update', this.deviceFocused)
   }
 }

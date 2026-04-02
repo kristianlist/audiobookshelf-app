@@ -93,7 +93,7 @@
 
 <script>
 import { Browser } from '@capacitor/browser'
-import { CapacitorHttp } from '@capacitor/core'
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Dialog } from '@capacitor/dialog'
 
 // TODO: when backend ready. See validateLoginFormResponse()
@@ -565,13 +565,20 @@ export default {
      * @throws {Error} An error with 'code' property set to the error code if the request fails.
      */
     async getRequest(url, headers, connectTimeout = 6000) {
+      // Dev proxy for web platform to avoid CORS issues
+      const requestUrl = Capacitor.getPlatform() === 'web' && url.startsWith('http') ? `/dev-proxy/${url}` : url
       const options = {
-        url,
+        url: requestUrl,
         headers,
         connectTimeout
       }
       try {
         const response = await CapacitorHttp.get(options)
+        // When using the dev proxy, restore the original target URL
+        // so redirect validation in validateLoginFormResponse works correctly
+        if (response.headers?.['x-final-url']) {
+          response.url = response.headers['x-final-url']
+        }
         console.log('[ServerConnectForm] GET request response', response)
         if (response.status == 200) {
           return response
@@ -593,8 +600,10 @@ export default {
       if (!headers['Content-Type'] && data) {
         headers['Content-Type'] = 'application/json'
       }
+      // Dev proxy for web platform to avoid CORS issues
+      const requestUrl = Capacitor.getPlatform() === 'web' && url.startsWith('http') ? `/dev-proxy/${url}` : url
       const options = {
-        url,
+        url: requestUrl,
         headers,
         data,
         connectTimeout

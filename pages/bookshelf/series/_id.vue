@@ -1,5 +1,24 @@
 <template>
-  <bookshelf-lazy-bookshelf page="series-books" :series-id="seriesId" v-on:downloadSeriesClick="downloadSeriesClick" />
+  <div class="w-full h-full flex flex-col">
+    <div v-if="totalCount" class="px-3 py-2 flex-shrink-0">
+      <div class="flex items-center justify-between mb-1.5">
+        <p class="text-sm text-fg-muted">{{ $getString('LabelFinishedCount', [finishedCount, totalCount]) }}</p>
+        <div class="flex items-center">
+          <p v-if="totalRemainingDurationPretty" class="text-sm text-fg-muted mr-2">{{ $getString('LabelTimeRemaining', [totalRemainingDurationPretty]) }}</p>
+          <ui-btn v-if="showPlayButton" color="success" :padding-x="4" :loading="playerIsStartingForThisMedia" small class="flex items-center justify-center w-24" @click="playClick">
+            <span class="material-symbols text-2xl fill">{{ playerIsPlaying ? 'pause' : 'play_arrow' }}</span>
+            <span class="px-1 text-sm">{{ playerIsPlaying ? $strings.ButtonPause : $strings.ButtonPlay }}</span>
+          </ui-btn>
+        </div>
+      </div>
+      <div class="h-1 w-full bg-track/50 rounded-full overflow-hidden">
+        <div class="h-full rounded-full transition-all duration-300" :class="overallProgressPercent >= 1 ? 'bg-success' : 'bg-yellow-400'" :style="{ width: overallProgressPercent * 100 + '%' }" />
+      </div>
+    </div>
+    <div class="flex-grow min-h-0">
+      <bookshelf-lazy-bookshelf page="series-books" :series-id="seriesId" v-on:downloadSeriesClick="downloadSeriesClick" />
+    </div>
+  </div>
 </template>
 
 <script>
@@ -16,6 +35,19 @@ export default {
     if (!series) {
       return redirect('/oops?message=Series not found')
     }
+
+    // Lookup matching local items and attach to series books
+    if (series.books && series.books.length) {
+      const localLibraryItems = (await app.$db.getLocalLibraryItems('book')) || []
+      if (localLibraryItems.length) {
+        series.books.forEach((book) => {
+          const matchingLocalLibraryItem = localLibraryItems.find((lli) => lli.libraryItemId === book.id)
+          if (!matchingLocalLibraryItem) return
+          book.localLibraryItem = matchingLocalLibraryItem
+        })
+      }
+    }
+
     store.commit('globals/setSeries', series)
     return {
       series,
@@ -24,6 +56,7 @@ export default {
   },
   data() {
     return {
+      mediaIdStartingPlayback: null,
       startingDownload: false,
       mediaType: 'book',
       booksPerFetch: 20,
@@ -37,9 +70,100 @@ export default {
   computed: {
     isIos() {
       return this.$platform === 'ios'
+    },
+    bookItems() {
+      return this.series?.books || []
+    },
+    finishedCount() {
+      return this.bookItems.filter((book) => {
+        const prog = this.$store.getters['user/getUserMediaProgress'](book.id)
+        return prog?.isFinished
+      }).length
+    },
+    totalCount() {
+      return this.bookItems.length
+    },
+    overallProgressPercent() {
+      if (!this.totalCount) return 0
+      return this.finishedCount / this.totalCount
+    },
+    totalRemainingDuration() {
+      let total = 0
+      this.bookItems.forEach((book) => {
+        const prog = this.$store.getters['user/getUserMediaProgress'](book.id)
+        if (prog?.isFinished) return
+        const duration = book.media?.duration || 0
+        const currentTime = prog?.currentTime || 0
+        total += Math.max(0, duration - currentTime)
+      })
+      return total
+    },
+    totalRemainingDurationPretty() {
+      if (!this.totalRemainingDuration) return ''
+      return this.$elapsedPrettyExtended(this.totalRemainingDuration)
+    },
+    playableItems() {
+      return this.bookItems.filter((book) => {
+        return !book.isMissing && !book.isInvalid && book.media?.tracks?.length
+      })
+    },
+    playerIsPlaying() {
+      return this.$store.state.playerIsPlaying && this.isOpenInPlayer
+    },
+    isOpenInPlayer() {
+      return !!this.playableItems.find((i) => {
+        if (i.localLibraryItem && this.$store.getters['getIsMediaStreaming'](i.localLibraryItem.id)) return true
+        return this.$store.getters['getIsMediaStreaming'](i.id)
+      })
+    },
+    playerIsStartingPlayback() {
+      return this.$store.state.playerIsStartingPlayback
+    },
+    playerIsStartingForThisMedia() {
+      if (!this.mediaIdStartingPlayback) return false
+      const mediaId = this.$store.state.playerStartingPlaybackMediaId
+      return mediaId === this.mediaIdStartingPlayback
+    },
+    showPlayButton() {
+      return this.playableItems.length
     }
   },
   methods: {
+    async playClick() {
+      if (this.playerIsStartingPlayback) return
+      await this.$hapticsImpact()
+
+      if (this.playerIsPlaying) {
+        this.$eventBus.$emit('pause-item')
+      } else {
+        this.playFromQueue()
+      }
+    },
+    playFromQueue(startIndex) {
+      this.$store.dispatch('queue/loadSeriesAsQueue', { series: this.series, startIndex })
+      const currentItem = this.$store.getters['queue/currentItem']
+      if (currentItem) {
+        this.mediaIdStartingPlayback = currentItem.libraryItemId
+        this.$store.commit('setPlayerIsStartingPlayback', currentItem.libraryItemId)
+
+        const payload = { libraryItemId: currentItem.libraryItemId }
+        if (currentItem.localLibraryItemId) {
+          payload.libraryItemId = currentItem.localLibraryItemId
+          payload.serverLibraryItemId = currentItem.serverLibraryItemId || currentItem.libraryItemId
+        }
+        this.$eventBus.$emit('play-item', payload)
+      }
+    },
+    playBookAtIndex(index) {
+      this.playFromQueue(index)
+    },
+    onPlaySeriesItem({ libraryItemId }) {
+      // Find the index in playable items matching this library item
+      const playableIndex = this.playableItems.findIndex((book) => book.id === libraryItemId)
+      if (playableIndex >= 0) {
+        this.playFromQueue(playableIndex)
+      }
+    },
     async downloadSeriesClick() {
       console.log('Download Series clicked')
       if (this.startingDownload) return
@@ -176,9 +300,11 @@ export default {
   },
   mounted() {
     this.$eventBus.$on('download-series-click', this.downloadSeriesClick)
+    this.$eventBus.$on('play-series-item', this.onPlaySeriesItem)
   },
   beforeDestroy() {
     this.$eventBus.$off('download-series-click', this.downloadSeriesClick)
+    this.$eventBus.$off('play-series-item', this.onPlaySeriesItem)
   }
 }
 </script>

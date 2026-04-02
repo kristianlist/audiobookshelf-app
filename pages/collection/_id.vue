@@ -22,7 +22,17 @@
           <p class="text-base text-fg">{{ description }}</p>
         </div>
 
-        <tables-collection-books-table :books="bookItems" :collection-id="collection.id" />
+        <div v-if="totalCount" class="px-2 mb-6">
+          <div class="flex items-center justify-between mb-1.5">
+            <p class="text-sm text-fg-muted">{{ $getString('LabelFinishedCount', [finishedCount, totalCount]) }}</p>
+            <p v-if="totalRemainingDurationPretty" class="text-sm text-fg-muted">{{ $getString('LabelTimeRemaining', [totalRemainingDurationPretty]) }}</p>
+          </div>
+          <div class="h-1 w-full bg-track/50 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-300" :class="overallProgressPercent >= 1 ? 'bg-success' : 'bg-yellow-400'" :style="{ width: overallProgressPercent * 100 + '%' }" />
+          </div>
+        </div>
+
+        <tables-collection-books-table :books="bookItems" :collection-id="collection.id" @playAtIndex="playBookAtIndex" />
       </div>
     </div>
     <div v-show="processingRemove" class="absolute top-0 left-0 w-full h-full z-10 bg-black bg-opacity-40 flex items-center justify-center">
@@ -107,6 +117,34 @@ export default {
     },
     showPlayButton() {
       return this.playableItems.length
+    },
+    finishedCount() {
+      return this.bookItems.filter((book) => {
+        const prog = this.$store.getters['user/getUserMediaProgress'](book.id)
+        return prog?.isFinished
+      }).length
+    },
+    totalCount() {
+      return this.bookItems.length
+    },
+    overallProgressPercent() {
+      if (!this.totalCount) return 0
+      return this.finishedCount / this.totalCount
+    },
+    totalRemainingDuration() {
+      let total = 0
+      this.bookItems.forEach((book) => {
+        const prog = this.$store.getters['user/getUserMediaProgress'](book.id)
+        if (prog?.isFinished) return
+        const duration = book.media?.duration || 0
+        const currentTime = prog?.currentTime || 0
+        total += Math.max(0, duration - currentTime)
+      })
+      return total
+    },
+    totalRemainingDurationPretty() {
+      if (!this.totalRemainingDuration) return ''
+      return this.$elapsedPrettyExtended(this.totalRemainingDuration)
     }
   },
   methods: {
@@ -117,24 +155,26 @@ export default {
       if (this.playerIsPlaying) {
         this.$eventBus.$emit('pause-item')
       } else {
-        this.playNextItem()
+        this.playFromQueue()
       }
     },
-    playNextItem() {
-      const nextBookNotRead = this.playableItems.find((pb) => {
-        const prog = this.$store.getters['user/getUserMediaProgress'](pb.id)
-        return !prog?.isFinished
-      })
-      if (nextBookNotRead) {
-        this.mediaIdStartingPlayback = nextBookNotRead.id
-        this.$store.commit('setPlayerIsStartingPlayback', nextBookNotRead.id)
+    playFromQueue(startIndex) {
+      this.$store.dispatch('queue/loadCollectionAsQueue', { collection: this.collection, startIndex })
+      const currentItem = this.$store.getters['queue/currentItem']
+      if (currentItem) {
+        this.mediaIdStartingPlayback = currentItem.libraryItemId
+        this.$store.commit('setPlayerIsStartingPlayback', currentItem.libraryItemId)
 
-        if (nextBookNotRead.localLibraryItem) {
-          this.$eventBus.$emit('play-item', { libraryItemId: nextBookNotRead.localLibraryItem.id, serverLibraryItemId: nextBookNotRead.id })
-        } else {
-          this.$eventBus.$emit('play-item', { libraryItemId: nextBookNotRead.id })
+        const payload = { libraryItemId: currentItem.libraryItemId }
+        if (currentItem.localLibraryItemId) {
+          payload.libraryItemId = currentItem.localLibraryItemId
+          payload.serverLibraryItemId = currentItem.serverLibraryItemId || currentItem.libraryItemId
         }
+        this.$eventBus.$emit('play-item', payload)
       }
+    },
+    playBookAtIndex(index) {
+      this.playFromQueue(index)
     }
   },
   mounted() {}

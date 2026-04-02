@@ -10,8 +10,8 @@
       <div class="flex-grow" />
       <p v-if="totalDuration" class="text-sm text-fg">{{ totalDurationPretty }}</p>
     </div>
-    <template v-for="item in items">
-      <tables-playlist-item-table-row :key="item.id" :item="item" :playlist-id="playlistId" @showMore="showMore" />
+    <template v-for="(item, index) in items">
+      <tables-playlist-item-table-row :key="item.id" :item="item" :index="index" :playlist-id="playlistId" @showMore="showMore" @playAtIndex="playAtIndex" />
     </template>
   </div>
 </template>
@@ -44,6 +44,9 @@ export default {
   methods: {
     showMore(playlistItem) {
       this.$emit('showMore', playlistItem)
+    },
+    playAtIndex(index) {
+      this.$emit('playAtIndex', index)
     }
   },
   mounted() {}

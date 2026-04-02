@@ -7,7 +7,7 @@
         </div>
         <div class="item-table-content h-full px-2 flex items-center">
           <div class="max-w-full">
-            <p class="truncate block text-sm">{{ itemTitle }} <span v-if="localLibraryItem" class="material-symbols text-success text-base align-text-bottom">download_done</span></p>
+            <p class="truncate block text-sm">{{ itemTitle }} <span v-if="localLibraryItem" class="material-symbols text-success text-base align-text-bottom">download_done</span> <span v-if="isOpenInPlayer" class="material-symbols text-success text-base align-text-bottom fill">graphic_eq</span></p>
             <p v-if="authorName" class="truncate block text-fg-muted text-xs">{{ authorName }}</p>
             <p class="text-xxs text-fg-muted">{{ itemDuration }}</p>
           </div>
@@ -38,6 +38,10 @@ export default {
     item: {
       type: Object,
       default: () => {}
+    },
+    index: {
+      type: Number,
+      default: 0
     }
   },
   data() {
@@ -157,26 +161,14 @@ export default {
     },
     async playClick() {
       if (this.playerIsStartingPlayback) return
-
       await this.$hapticsImpact()
-      let mediaId = this.episodeId || this.libraryItem.id
+
       if (this.streamIsPlaying) {
         this.$eventBus.$emit('pause-item')
-      } else if (this.localLibraryItem) {
-        this.$store.commit('setPlayerIsStartingPlayback', mediaId)
-        this.$eventBus.$emit('play-item', {
-          libraryItemId: this.localLibraryItem.id,
-          episodeId: this.localEpisode?.id,
-          serverLibraryItemId: this.libraryItem.id,
-          serverEpisodeId: this.episodeId
-        })
-      } else {
-        this.$store.commit('setPlayerIsStartingPlayback', mediaId)
-        this.$eventBus.$emit('play-item', {
-          libraryItemId: this.libraryItem.id,
-          episodeId: this.episodeId
-        })
+        return
       }
+
+      this.$emit('playAtIndex', this.index)
     }
   },
   mounted() {}

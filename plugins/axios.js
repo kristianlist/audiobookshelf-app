@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core'
+
 export default function ({ $axios, store, $db }) {
   // Track if we're currently refreshing to prevent multiple refresh attempts
   let isRefreshing = false
@@ -56,6 +58,12 @@ export default function ({ $axios, store, $db }) {
     if (serverUrl) {
       config.url = `${serverUrl}${config.url}`
     }
+
+    // Dev proxy for web platform to avoid CORS issues
+    if (Capacitor.getPlatform() === 'web' && config.url.startsWith('http')) {
+      config.url = `/dev-proxy/${config.url}`
+    }
+
     console.log('[Axios] Request out', config.url)
   })
 

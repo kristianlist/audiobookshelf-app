@@ -20,7 +20,17 @@
           <p class="text-base text-fg">{{ description }}</p>
         </div>
 
-        <tables-playlist-items-table :items="playlistItems" :playlist-id="playlist.id" @showMore="showMore" />
+        <div v-if="totalCount" class="px-3 mb-6">
+          <div class="flex items-center justify-between mb-1.5">
+            <p class="text-sm text-fg-muted">{{ $getString('LabelFinishedCount', [finishedCount, totalCount]) }}</p>
+            <p v-if="totalRemainingDurationPretty" class="text-sm text-fg-muted">{{ $getString('LabelTimeRemaining', [totalRemainingDurationPretty]) }}</p>
+          </div>
+          <div class="h-1 w-full bg-track/50 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-300" :class="overallProgressPercent >= 1 ? 'bg-success' : 'bg-yellow-400'" :style="{ width: overallProgressPercent * 100 + '%' }" />
+          </div>
+        </div>
+
+        <tables-playlist-items-table :items="playlistItems" :playlist-id="playlist.id" @showMore="showMore" @playAtIndex="playItemAtIndex" />
       </div>
     </div>
 
@@ -121,6 +131,34 @@ export default {
       if (!this.mediaIdStartingPlayback) return false
       const mediaId = this.$store.state.playerStartingPlaybackMediaId
       return mediaId === this.mediaIdStartingPlayback
+    },
+    finishedCount() {
+      return this.playlistItems.filter((item) => {
+        const prog = this.$store.getters['user/getUserMediaProgress'](item.libraryItemId, item.episodeId)
+        return prog?.isFinished
+      }).length
+    },
+    totalCount() {
+      return this.playlistItems.length
+    },
+    overallProgressPercent() {
+      if (!this.totalCount) return 0
+      return this.finishedCount / this.totalCount
+    },
+    totalRemainingDuration() {
+      let total = 0
+      this.playlistItems.forEach((item) => {
+        const prog = this.$store.getters['user/getUserMediaProgress'](item.libraryItemId, item.episodeId)
+        if (prog?.isFinished) return
+        const duration = item.episode ? (item.episode.duration || 0) : (item.libraryItem?.media?.duration || 0)
+        const currentTime = prog?.currentTime || 0
+        total += Math.max(0, duration - currentTime)
+      })
+      return total
+    },
+    totalRemainingDurationPretty() {
+      if (!this.totalRemainingDuration) return ''
+      return this.$elapsedPrettyExtended(this.totalRemainingDuration)
     }
   },
   methods: {
@@ -136,23 +174,31 @@ export default {
       if (this.playerIsPlaying) {
         this.$eventBus.$emit('pause-item')
       } else {
-        this.playNextItem()
+        this.playFromQueue()
       }
     },
-    playNextItem() {
-      const nextItem = this.playableItems.find((i) => {
-        const prog = this.$store.getters['user/getUserMediaProgress'](i.libraryItemId, i.episodeId)
-        return !prog?.isFinished
-      })
-      if (nextItem) {
-        this.mediaIdStartingPlayback = nextItem.episodeId || nextItem.libraryItemId
+    playFromQueue(startIndex) {
+      this.$store.dispatch('queue/loadPlaylistAsQueue', { playlist: this.playlist, startIndex })
+      const currentItem = this.$store.getters['queue/currentItem']
+      if (currentItem) {
+        this.mediaIdStartingPlayback = currentItem.episodeId || currentItem.libraryItemId
         this.$store.commit('setPlayerIsStartingPlayback', this.mediaIdStartingPlayback)
-        if (nextItem.localLibraryItem) {
-          this.$eventBus.$emit('play-item', { libraryItemId: nextItem.localLibraryItem.id, episodeId: nextItem.localEpisode?.id, serverLibraryItemId: nextItem.libraryItemId, serverEpisodeId: nextItem.episodeId })
-        } else {
-          this.$eventBus.$emit('play-item', { libraryItemId: nextItem.libraryItemId, episodeId: nextItem.episodeId })
+
+        const payload = {
+          libraryItemId: currentItem.libraryItemId,
+          episodeId: currentItem.episodeId || undefined
         }
+        if (currentItem.localLibraryItemId) {
+          payload.libraryItemId = currentItem.localLibraryItemId
+          payload.episodeId = currentItem.localEpisodeId || undefined
+          payload.serverLibraryItemId = currentItem.serverLibraryItemId || currentItem.libraryItemId
+          payload.serverEpisodeId = currentItem.serverEpisodeId || currentItem.episodeId || undefined
+        }
+        this.$eventBus.$emit('play-item', payload)
       }
+    },
+    playItemAtIndex(index) {
+      this.playFromQueue(index)
     },
     playlistUpdated(playlist) {
       if (this.playlist.id !== playlist.id) return

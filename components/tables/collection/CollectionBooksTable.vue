@@ -10,8 +10,8 @@
       <div class="flex-grow" />
       <p v-if="totalDuration" class="text-sm text-fg">{{ totalDurationPretty }}</p>
     </div>
-    <template v-for="book in booksCopy">
-      <tables-collection-book-table-row :key="book.id" :book="book" :collection-id="collectionId" class="item collection-book-item" @edit="editBook" />
+    <template v-for="(book, index) in booksCopy">
+      <tables-collection-book-table-row :key="book.id" :book="book" :index="index" :collection-id="collectionId" class="item collection-book-item" @edit="editBook" @playAtIndex="playAtIndex" />
     </template>
   </div>
 </template>
@@ -54,6 +54,9 @@ export default {
       var bookIds = this.books.map((b) => b.id)
       this.$store.commit('setBookshelfBookIds', bookIds)
       this.$store.commit('showEditModal', book)
+    },
+    playAtIndex(index) {
+      this.$emit('playAtIndex', index)
     },
     init() {
       this.booksCopy = this.books.map((b) => ({ ...b }))

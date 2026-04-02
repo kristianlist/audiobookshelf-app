@@ -1,4 +1,11 @@
-import { CapacitorHttp } from '@capacitor/core'
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
+
+// Wrap URL with dev proxy path when running on web to avoid CORS issues
+function devProxyUrl(url) {
+  if (Capacitor.getPlatform() !== 'web') return url
+  if (!url.startsWith('http')) return url
+  return `/dev-proxy/${url}`
+}
 
 export default function ({ store, $db, $socket }, inject) {
   const nativeHttp = {
@@ -31,7 +38,7 @@ export default function ({ store, $db, $socket }, inject) {
 
       return CapacitorHttp.request({
         method,
-        url,
+        url: devProxyUrl(url),
         data,
         headers,
         ...options
@@ -89,7 +96,7 @@ export default function ({ store, $db, $socket }, inject) {
         console.log('[nativeHttp] Retrying original request with new token...')
         const retryResponse = await CapacitorHttp.request({
           method,
-          url,
+          url: devProxyUrl(url),
           data,
           headers: {
             ...headers,
@@ -128,7 +135,7 @@ export default function ({ store, $db, $socket }, inject) {
         console.log('[nativeHttp] Refreshing access token...')
 
         const response = await CapacitorHttp.post({
-          url: `${serverAddress}/auth/refresh`,
+          url: devProxyUrl(`${serverAddress}/auth/refresh`),
           headers: {
             'Content-Type': 'application/json',
             'x-refresh-token': refreshToken

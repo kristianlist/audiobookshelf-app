@@ -38,6 +38,8 @@ export default {
 
   axios: {},
 
+  serverMiddleware: [{ path: '/dev-proxy', handler: '~/server-middleware/dev-proxy.js' }],
+
   build: {
     postcss: {
       postcssOptions: {

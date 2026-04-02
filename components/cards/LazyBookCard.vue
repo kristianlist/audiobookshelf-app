@@ -321,6 +321,7 @@ export default {
       return this.localLibraryItem.media.episodes.find((ep) => ep.serverEpisodeId === this.recentEpisode.id)
     },
     isStreaming() {
+      if (this.localLibraryItem && this.store.getters['getIsMediaStreaming'](this.localLibraryItem.id, this.recentEpisode?.id)) return true
       return this.store.getters['getIsMediaStreaming'](this.libraryItemId, this.recentEpisode?.id)
     },
     streamIsPlaying() {
@@ -410,8 +411,8 @@ export default {
       return this._libraryItem.rssFeed || null
     },
     showPlayButton() {
+      if (this.showSequence) return !this.isMissing && !this.isInvalid && this.numTracks
       return false
-      // return !this.isMissing && !this.isInvalid && !this.isStreaming && (this.numTracks || this.recentEpisode)
     }
   },
   methods: {
@@ -453,7 +454,15 @@ export default {
       // Server books may have a local library item
       this.localLibraryItem = localLibraryItem
     },
-    async play() {},
+    async play() {
+      await this.$hapticsImpact()
+      const eventBus = this.$eventBus || this.$nuxt.$eventBus
+      if (this.streamIsPlaying) {
+        eventBus.$emit('pause-item')
+        return
+      }
+      eventBus.$emit('play-series-item', { libraryItemId: this.libraryItemId })
+    },
     async playEpisode() {
       if (this.playerIsStartingPlayback) return
 
