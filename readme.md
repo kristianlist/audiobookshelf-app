@@ -22,6 +22,28 @@ Join us on [discord](https://discord.gg/pJsjuNCKRq)
 
 <img alt="Screenshot" src="https://github.com/advplyr/audiobookshelf-app/raw/master/screenshots/DeviceDemoScreens.png" />
 
+## Fork Features
+
+This fork adds a **playback queue system** on top of the base audiobookshelf app. The queue enables continuous playback across multiple items with full player controls.
+
+### Playback Queue
+
+- **Collections, playlists, and series** can be played as a queue — when one item finishes, the next starts automatically
+- **Auto-series queue** — playing any book that belongs to a series automatically loads the entire series as a queue, so the next book plays when the current one finishes (works from item page, card click, search results, etc.)
+- **Shuffle** — Fisher-Yates shuffle with the current item kept in place
+- **Repeat modes** — cycle through off, repeat-all, and repeat-one
+- **Skip controls** — skip to next/previous item from the player UI
+- **Up Next** — shows the next item title in the player
+- **Queue view modal** — full scrollable list of queued items with current item highlight, tap-to-jump, shuffle/repeat toggles, and clear queue
+- **Now-playing indicator** — animated icon on the currently playing item in collection, playlist, and series tables
+- **Progress bar** — overall progress and remaining time shown on collection, playlist, and series pages
+- **Persistent queue** — queue state (items, position, shuffle, repeat) is saved across app restarts
+- **Play button on series page** — series can now be played directly with a play button, matching collection and playlist pages
+
+### Automated Releases
+
+- GitHub Actions workflow builds a signed release APK automatically when a GitHub release is published
+
 ## Contributing
 
 This application is built using [NuxtJS](https://nuxtjs.org/) and [Capacitor](https://capacitorjs.com/) in order to run on both iOS and Android on the same code base.

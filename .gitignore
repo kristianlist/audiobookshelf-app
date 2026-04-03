@@ -91,3 +91,9 @@ sw.*
 
 /resources/
 /android/app/release/
+
+# Signing
+android/keystore.properties
+android/*.keystore
+android/*.jks
+android/keystore-base64.txt

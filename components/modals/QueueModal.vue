@@ -15,7 +15,10 @@
             <span class="material-symbols text-2xl cursor-pointer mr-3" :class="shuffled ? 'text-success' : 'text-fg-muted'" @click="toggleShuffle">shuffle</span>
             <span class="material-symbols text-2xl cursor-pointer" :class="repeatMode !== 'none' ? 'text-success' : 'text-fg-muted'" @click="cycleRepeatMode">{{ repeatModeIcon }}</span>
           </div>
-          <p class="text-fg-muted text-sm font-mono">{{ currentIndex + 1 }} / {{ queueLength }}</p>
+          <div class="flex items-center">
+            <p class="text-fg-muted text-sm font-mono mr-3">{{ currentIndex + 1 }} / {{ queueLength }}</p>
+            <span class="material-symbols text-xl cursor-pointer text-fg-muted" @click="clearQueue">delete_sweep</span>
+          </div>
         </div>
 
         <!-- Queue items list -->
@@ -112,6 +115,11 @@ export default {
     },
     cycleRepeatMode() {
       this.$store.dispatch('queue/cycleRepeatMode')
+    },
+    async clearQueue() {
+      await this.$hapticsImpact()
+      this.$store.dispatch('queue/clearQueue')
+      this.show = false
     },
     scrollToCurrent() {
       if (this.currentIndex < 0) return
