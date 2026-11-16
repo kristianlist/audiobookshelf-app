@@ -1,23 +1,33 @@
 <template>
+  <!-- Main container - only shows when playback session exists, applies fullscreen/platform classes -->
   <div v-if="playbackSession" id="streamContainer" class="fixed top-0 left-0 layout-wrapper right-0 z-50 pointer-events-none" :class="{ fullscreen: showFullscreen, 'ios-player': $platform === 'ios', 'web-player': $platform === 'web' }">
+    <!-- Fullscreen overlays: colored background and menu overlays -->
     <div v-if="showFullscreen" class="w-full h-full z-10 absolute top-0 left-0 pointer-events-auto" :style="{ backgroundColor: coverRgb }">
+      <!-- Background gradient for player -->
       <div class="w-full h-full absolute top-0 left-0 pointer-events-none" style="background: var(--gradient-audio-player)" />
 
+      <!-- Collapse button - minimizes player -->
       <div class="top-4 left-4 absolute cursor-pointer">
         <span class="material-symbols text-5xl" :class="{ 'text-black text-opacity-75': coverBgIsLight && theme !== 'black' }" @click="collapseFullscreen">keyboard_arrow_down</span>
       </div>
+
+      <!-- Cast button - Chromecast toggle -->
       <div v-show="showCastBtn" class="top-6 right-16 absolute cursor-pointer">
         <span class="material-symbols text-3xl" :class="coverBgIsLight && theme !== 'black' ? 'text-black' : ''" @click="castClick">{{ isCasting ? 'cast_connected' : 'cast' }}</span>
       </div>
       <div v-if="queueIsActive" class="top-6 absolute cursor-pointer" :class="showCastBtn ? 'right-28' : 'right-16'">
         <span class="material-symbols text-3xl" :class="{ 'text-black text-opacity-75': coverBgIsLight && theme !== 'black' }" @click="openQueueModal">queue_music</span>
       </div>
+      <!-- Player options menu button -->
       <div class="top-6 right-4 absolute cursor-pointer">
         <span class="material-symbols text-3xl" :class="{ 'text-black text-opacity-75': coverBgIsLight && theme !== 'black' }" @click="showMoreMenuDialog = true">more_vert</span>
       </div>
-      <p class="top-4 absolute left-0 right-0 mx-auto text-center uppercase tracking-widest text-opacity-75" :class="{ 'text-black text-opacity-75': coverBgIsLight && theme !== 'black' }" style="font-size: 10px">{{ isDirectPlayMethod ? $strings.LabelPlaybackDirect : isLocalPlayMethod ? $strings.LabelPlaybackLocal : $strings.LabelPlaybackTranscode }}</p>
+
+      <!-- Playback method indicator (Direct/Local/Transcode) -->
+      <p class="top-4 absolute left-0 right-0 mx-auto text-center uppercase tracking-widest text-opacity-75 z-50" :class="{ 'text-black text-opacity-75': coverBgIsLight && theme !== 'black' }" style="font-size: 10px">{{ isDirectPlayMethod ? $strings.LabelPlaybackDirect : isLocalPlayMethod ? $strings.LabelPlaybackLocal : $strings.LabelPlaybackTranscode }}</p>
     </div>
 
+    <!-- Overall book progress bar -->
     <div v-if="playerSettings.useChapterTrack && playerSettings.useTotalTrack && showFullscreen" class="absolute total-track w-full z-30 px-6">
       <div class="flex">
         <p class="font-mono text-fg" style="font-size: 0.8rem">{{ currentTimePretty }}</p>
@@ -25,7 +35,7 @@
         <p class="font-mono text-fg" style="font-size: 0.8rem">{{ totalTimeRemainingPretty }}</p>
       </div>
       <div class="w-full">
-        <div class="h-1 w-full bg-track/50 relative rounded-full">
+        <div class="h-1 w-full bg-track/50 relative rounded-full overflow-hidden">
           <div ref="totalReadyTrack" class="h-full bg-track-buffered absolute top-0 left-0 pointer-events-none rounded-full" />
           <div ref="totalBufferedTrack" class="h-full bg-track absolute top-0 left-0 pointer-events-none rounded-full" />
           <div ref="totalPlayedTrack" class="h-full bg-track-cursor absolute top-0 left-0 pointer-events-none rounded-full" />
@@ -33,16 +43,19 @@
       </div>
     </div>
 
+    <!-- Book cover wrapper  -->
     <div class="cover-wrapper absolute z-30 pointer-events-auto" @click="clickContainer">
       <div class="w-full h-full flex justify-center">
         <covers-book-cover v-if="libraryItem || localLibraryItemCoverSrc" ref="cover" :library-item="libraryItem" :download-cover="localLibraryItemCoverSrc" :width="bookCoverWidth" :book-cover-aspect-ratio="bookCoverAspectRatio" raw @imageLoaded="coverImageLoaded" />
       </div>
 
+      <!-- Sync failed indicator - shows error icon if progress sync failed -->
       <div v-if="syncStatus === $constants.SyncStatus.FAILED" class="absolute top-0 left-0 w-full h-full flex items-center justify-center z-30" @click.stop="showSyncsFailedDialog">
         <span class="material-symbols text-error text-3xl">error</span>
       </div>
     </div>
 
+    <!-- Title and author text -->
     <div class="title-author-texts absolute z-30 left-0 right-0 overflow-hidden" @click="clickTitleAndAuthor">
       <div ref="titlewrapper" class="overflow-hidden relative">
         <p class="title-text whitespace-nowrap"></p>
@@ -51,6 +64,7 @@
     </div>
 
     <div id="playerContent" class="playerContainer w-full z-20 absolute bottom-0 left-0 right-0 p-2 pointer-events-auto transition-all" :style="{ backgroundColor: showFullscreen ? '' : coverRgb }" @click="clickContainer">
+      <!-- Top controls bar - fullscreen only: bookmarks, speed, sleep timer, chapters -->
       <div v-if="showFullscreen" class="absolute bottom-4 left-0 right-0 w-full pb-4 pt-2 mx-auto px-6" style="max-width: 414px">
         <!-- Queue info: Up Next and position -->
         <div v-if="queueIsActive" class="flex items-center justify-between pointer-events-auto mb-2 cursor-pointer" @click="openQueueModal">
@@ -83,38 +97,40 @@
       </div>
       <div v-else class="w-full h-full absolute top-0 left-0 pointer-events-none" style="background: var(--gradient-minimized-audio-player)" />
 
+      <!-- Playback controls - jump buttons, play/pause, chapter navigation -->
       <div id="playerControls" class="absolute right-0 bottom-0 mx-auto" style="max-width: 414px">
         <div class="flex items-center max-w-full" :class="playerSettings.lockUi ? 'justify-center' : 'justify-between'">
           <!-- Queue skip previous (replaces chapter start when queue active) -->
-          <span v-if="showFullscreen && !playerSettings.lockUi && queueIsActive" class="material-symbols next-icon text-fg cursor-pointer" :class="queueHasPrevious && !isLoading ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="skipToPreviousInQueue">skip_previous</span>
-          <span v-else v-show="showFullscreen && !playerSettings.lockUi" class="material-symbols next-icon text-fg cursor-pointer" :class="isLoading ? 'text-opacity-10' : 'text-opacity-75'" @click.stop="jumpChapterStart">first_page</span>
-          <div v-show="!playerSettings.lockUi" class="jump-icon text-fg cursor-pointer flex flex-col items-center" :class="isLoading ? 'text-opacity-10' : 'text-opacity-75'" @click.stop="jumpBackwards">
+          <span v-if="showFullscreen && !playerSettings.lockUi && queueIsActive" class="material-symbols next-icon text-fg cursor-pointer" :class="queueHasPrevious && !showLoadingState ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="skipToPreviousInQueue">skip_previous</span>
+          <span v-else v-show="showFullscreen && !playerSettings.lockUi" class="material-symbols next-icon text-fg cursor-pointer" :class="showLoadingState ? 'text-opacity-10' : 'text-opacity-75'" @click.stop="jumpChapterStart">first_page</span>
+          <div v-show="!playerSettings.lockUi" class="jump-icon text-fg cursor-pointer flex flex-col items-center" :class="showLoadingState ? 'text-opacity-10' : 'text-opacity-75'" @click.stop="jumpBackwards">
             <span class="material-symbols text-3xl leading-none">replay</span>
             <span v-if="showFullscreen" class="jump-label text-[10px] font-semibold leading-tight">{{ jumpBackwardsLabel }}</span>
           </div>
           <div class="play-btn cursor-pointer shadow-sm flex items-center justify-center rounded-full text-primary mx-4 relative overflow-hidden" :style="{ backgroundColor: coverRgb }" :class="{ 'animate-spin': seekLoading }" @mousedown.prevent @mouseup.prevent @click.stop="playPauseClick">
             <div v-if="!coverBgIsLight" class="absolute top-0 left-0 w-full h-full bg-white bg-opacity-20 pointer-events-none" />
 
-            <span v-if="!isLoading" class="material-symbols fill" :class="{ 'text-white': coverRgb && !coverBgIsLight }">{{ seekLoading ? 'autorenew' : !isPlaying ? 'play_arrow' : 'pause' }}</span>
+            <span v-if="!showLoadingState" class="material-symbols fill" :class="{ 'text-white': coverRgb && !coverBgIsLight }">{{ seekLoading ? 'autorenew' : !isPlaying ? 'play_arrow' : 'pause' }}</span>
             <widgets-spinner-icon v-else class="h-8 w-8" />
           </div>
-          <div v-show="!playerSettings.lockUi" class="jump-icon text-fg cursor-pointer flex flex-col items-center" :class="isLoading ? 'text-opacity-10' : 'text-opacity-75'" @click.stop="jumpForward">
+          <div v-show="!playerSettings.lockUi" class="jump-icon text-fg cursor-pointer flex flex-col items-center" :class="showLoadingState ? 'text-opacity-10' : 'text-opacity-75'" @click.stop="jumpForward">
             <span class="material-symbols text-3xl leading-none">forward_media</span>
             <span v-if="showFullscreen" class="jump-label text-[10px] font-semibold leading-tight">{{ jumpForwardLabel }}</span>
           </div>
           <!-- Queue skip next (replaces chapter next when queue active) -->
-          <span v-if="showFullscreen && !playerSettings.lockUi && queueIsActive" class="material-symbols next-icon text-fg cursor-pointer" :class="queueHasNext && !isLoading ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="skipToNextInQueue">skip_next</span>
-          <span v-else v-show="showFullscreen && !playerSettings.lockUi" class="material-symbols next-icon text-fg cursor-pointer" :class="nextChapter && !isLoading ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="jumpNextChapter">last_page</span>
+          <span v-if="showFullscreen && !playerSettings.lockUi && queueIsActive" class="material-symbols next-icon text-fg cursor-pointer" :class="queueHasNext && !showLoadingState ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="skipToNextInQueue">skip_next</span>
+          <span v-else v-show="showFullscreen && !playerSettings.lockUi" class="material-symbols next-icon text-fg cursor-pointer" :class="nextChapter && !showLoadingState ? 'text-opacity-75' : 'text-opacity-10'" @click.stop="jumpNextChapter">last_page</span>
         </div>
       </div>
 
+      <!-- Chapter progress bar -->
       <div id="playerTrack" class="absolute left-0 w-full px-6">
         <div class="flex pointer-events-none">
           <p class="font-mono text-fg" style="font-size: 0.8rem" ref="currentTimestamp">0:00</p>
           <div class="flex-grow" />
           <p class="font-mono text-fg" style="font-size: 0.8rem">{{ timeRemainingPretty }}</p>
         </div>
-        <div ref="track" class="h-1.5 w-full bg-track/50 relative rounded-full" :class="{ 'animate-pulse': isLoading }" @click.stop>
+        <div ref="track" class="h-1.5 w-full bg-track/50 relative rounded-full overflow-hidden" :class="{ 'animate-pulse': showLoadingState }" @click.stop>
           <div ref="readyTrack" class="h-full bg-track-buffered absolute top-0 left-0 rounded-full pointer-events-none" />
           <div ref="bufferedTrack" class="h-full bg-track absolute top-0 left-0 rounded-full pointer-events-none" />
           <div ref="playedTrack" class="h-full bg-track-cursor absolute top-0 left-0 rounded-full pointer-events-none" />
@@ -125,7 +141,9 @@
       </div>
     </div>
 
+    <!-- Chapters modal - lists chapters for navigation -->
     <modals-chapters-modal v-model="showChapterModal" :current-chapter="currentChapter" :chapters="chapters" :playback-rate="currentPlaybackRate" @select="selectChapter" />
+    <!-- More menu dialog - player settings and options -->
     <modals-dialog v-model="showMoreMenuDialog" :items="menuItems" width="80vw" @action="clickMenuAction" />
   </div>
 </template>
@@ -134,7 +152,7 @@
 import { Capacitor } from '@capacitor/core'
 import { AbsAudioPlayer } from '@/plugins/capacitor'
 import { Dialog } from '@capacitor/dialog'
-import { FastAverageColor } from 'fast-average-color'
+import { getAverageColorFromCoverUrl } from '@/utils/coverAverageColor'
 import WrappingMarquee from '@/assets/WrappingMarquee.js'
 import jumpLabelMixin from '@/mixins/jumpLabel'
 
@@ -177,6 +195,7 @@ export default {
         lockUi: false
       },
       isLoading: false,
+      isCheckingServerProgress: false,
       isDraggingCursor: false,
       draggingTouchStartX: 0,
       draggingTouchStartTime: 0,
@@ -289,6 +308,9 @@ export default {
         }
         return 190 * heightScale
       }
+    },
+    showLoadingState() {
+      return this.isLoading || this.isCheckingServerProgress
     },
     showCastBtn() {
       return this.$store.state.isCastAvailable
@@ -460,17 +482,14 @@ export default {
     },
     async coverImageLoaded(fullCoverUrl) {
       if (!fullCoverUrl) return
-
-      const fac = new FastAverageColor()
-      fac
-        .getColorAsync(fullCoverUrl)
-        .then((color) => {
-          this.coverRgb = color.rgba
-          this.coverBgIsLight = color.isLight
-        })
-        .catch((e) => {
-          console.log(e)
-        })
+      const avg = await getAverageColorFromCoverUrl(this, fullCoverUrl)
+      if (!avg) {
+        this.coverRgb = 'rgb(55, 56, 56)'
+        this.coverBgIsLight = false
+      } else {
+        this.coverRgb = avg.rgba
+        this.coverBgIsLight = avg.isLight
+      }
     },
     clickTitleAndAuthor() {
       if (!this.showFullscreen) return
@@ -500,9 +519,8 @@ export default {
       this.showFullscreen = true
       if (this.titleMarquee) this.titleMarquee.reset()
 
-      // Update track for total time bar if useChapterTrack is set
       this.$nextTick(() => {
-        this.updateTrack()
+        this.measureAndUpdateTrackWidth()
       })
     },
     collapseFullscreen() {
@@ -513,13 +531,13 @@ export default {
     },
     async jumpNextChapter() {
       await this.$hapticsImpact()
-      if (this.isLoading) return
+      if (this.showLoadingState) return
       if (!this.nextChapter) return
       this.seek(this.nextChapter.start)
     },
     async jumpChapterStart() {
       await this.$hapticsImpact()
-      if (this.isLoading) return
+      if (this.showLoadingState) return
       if (!this.currentChapter) {
         return this.restart()
       }
@@ -537,12 +555,12 @@ export default {
     },
     async skipToNextInQueue() {
       await this.$hapticsImpact()
-      if (this.isLoading || !this.queueHasNext) return
+      if (this.showLoadingState || !this.queueHasNext) return
       this.$eventBus.$emit('queue-skip-next')
     },
     async skipToPreviousInQueue() {
       await this.$hapticsImpact()
-      if (this.isLoading || !this.queueHasPrevious) return
+      if (this.showLoadingState || !this.queueHasPrevious) return
       this.$eventBus.$emit('queue-skip-previous')
     },
     toggleShuffle() {
@@ -568,12 +586,12 @@ export default {
     },
     async jumpBackwards() {
       await this.$hapticsImpact()
-      if (this.isLoading) return
+      if (this.showLoadingState) return
       AbsAudioPlayer.seekBackward({ value: this.jumpBackwardsTime })
     },
     async jumpForward() {
       await this.$hapticsImpact()
-      if (this.isLoading) return
+      if (this.showLoadingState) return
       AbsAudioPlayer.seekForward({ value: this.jumpForwardTime })
     },
     setStreamReady() {
@@ -601,13 +619,17 @@ export default {
       this.updateReadyTrack()
     },
     updateReadyTrack() {
+      if (!this.$refs.readyTrack) return
+
       if (this.playerSettings.useChapterTrack) {
-        if (this.$refs.totalReadyTrack) {
-          this.$refs.totalReadyTrack.style.width = this.readyTrackWidth + 'px'
+        if (this.$refs.totalReadyTrack && this.trackWidth) {
+          const readyPercent = (this.readyTrackWidth / this.trackWidth) * 100
+          this.$refs.totalReadyTrack.style.width = readyPercent + '%'
         }
-        this.$refs.readyTrack.style.width = this.trackWidth + 'px'
-      } else {
-        this.$refs.readyTrack.style.width = this.readyTrackWidth + 'px'
+        this.$refs.readyTrack.style.width = '100%'
+      } else if (this.trackWidth) {
+        const readyPercent = (this.readyTrackWidth / this.trackWidth) * 100
+        this.$refs.readyTrack.style.width = readyPercent + '%'
       }
     },
     updateTimestamp() {
@@ -659,25 +681,27 @@ export default {
         bufferedPercent = Math.max(0, Math.min(1, (this.bufferedTime - this.currentChapter.start) / this.currentChapterDuration))
       }
 
-      const ptWidth = Math.round(percentDone * this.trackWidth)
+      const playedPercent = percentDone * 100
+      const bufferedPercentWidth = bufferedPercent * 100
       if (this.$refs.playedTrack) {
-        this.$refs.playedTrack.style.width = ptWidth + 'px'
+        this.$refs.playedTrack.style.width = playedPercent + '%'
       }
       if (this.$refs.bufferedTrack) {
-        this.$refs.bufferedTrack.style.width = Math.round(bufferedPercent * this.trackWidth) + 'px'
+        this.$refs.bufferedTrack.style.width = bufferedPercentWidth + '%'
       }
 
-      if (this.$refs.trackCursor) {
-        this.$refs.trackCursor.style.left = ptWidth - 14 + 'px'
+      if (this.$refs.trackCursor && this.$refs.track) {
+        const trackWidth = this.$refs.track.clientWidth
+        this.$refs.trackCursor.style.left = Math.round(percentDone * trackWidth) - 14 + 'px'
       }
 
       if (this.playerSettings.useChapterTrack) {
-        if (this.$refs.totalPlayedTrack) this.$refs.totalPlayedTrack.style.width = Math.round(totalPercentDone * this.trackWidth) + 'px'
-        if (this.$refs.totalBufferedTrack) this.$refs.totalBufferedTrack.style.width = Math.round(totalBufferedPercent * this.trackWidth) + 'px'
+        if (this.$refs.totalPlayedTrack) this.$refs.totalPlayedTrack.style.width = totalPercentDone * 100 + '%'
+        if (this.$refs.totalBufferedTrack) this.$refs.totalBufferedTrack.style.width = totalBufferedPercent * 100 + '%'
       }
     },
     seek(time) {
-      if (this.isLoading) return
+      if (this.showLoadingState) return
       if (this.seekLoading) {
         console.error('Already seek loading', this.seekedTime)
         return
@@ -686,12 +710,12 @@ export default {
       this.seekedTime = time
       this.seekLoading = true
 
-      AbsAudioPlayer.seek({ value: Math.floor(time) })
+      // Pass fractional seconds so seeks to non-integer chapter starts don't truncate
+      AbsAudioPlayer.seek({ value: time })
 
       if (this.$refs.playedTrack) {
         const perc = time / this.totalDuration
-        const ptWidth = Math.round(perc * this.trackWidth)
-        this.$refs.playedTrack.style.width = ptWidth + 'px'
+        this.$refs.playedTrack.style.width = perc * 100 + '%'
 
         this.$refs.playedTrack.classList.remove('bg-gray-200')
         this.$refs.playedTrack.classList.add('bg-yellow-300')
@@ -709,10 +733,13 @@ export default {
     },
     async playPauseClick() {
       await this.$hapticsImpact()
-      if (this.isLoading) return
+      if (this.showLoadingState) return
 
       this.isPlaying = !!((await AbsAudioPlayer.playPause()) || {}).playing
       this.isEnded = false
+    },
+    setIsCheckingServerProgress(value) {
+      this.isCheckingServerProgress = !!value
     },
     play() {
       AbsAudioPlayer.playPlayer()
@@ -797,7 +824,8 @@ export default {
         maxTime = minTime + duration
       }
 
-      const timePerPixel = duration / this.trackWidth
+      const trackWidth = this.$refs.track?.clientWidth || this.trackWidth
+      const timePerPixel = duration / trackWidth
       const newTime = this.draggingTouchStartTime + timePerPixel * distanceMoved
       this.draggingCurrentTime = Math.min(maxTime, Math.max(minTime, newTime))
 
@@ -936,11 +964,7 @@ export default {
         this.titleMarquee = new WrappingMarquee(this.$refs.titlewrapper)
         this.titleMarquee.init(this.title)
 
-        if (this.$refs.track) {
-          this.trackWidth = this.$refs.track.clientWidth
-        } else {
-          console.error('Track not loaded', this.$refs)
-        }
+        this.measureAndUpdateTrackWidth()
       })
     },
     onPlaybackClosed() {
@@ -986,15 +1010,26 @@ export default {
         }
       }
 
+      // playerContainer width transition is 150ms, remeasure after layout settles
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      this.refreshUI()
+
       this.isRefreshingUI = false
+    },
+    measureAndUpdateTrackWidth() {
+      if (!this.$refs.track) {
+        console.error('Track not loaded', this.$refs)
+        return
+      }
+      this.trackWidth = this.$refs.track.clientWidth
+      this.updateTrack()
+      this.updateReadyTrack()
     },
     refreshUI() {
       this.updateScreenSize()
-      if (this.$refs.track) {
-        this.trackWidth = this.$refs.track.clientWidth
-        this.updateTrack()
-        this.updateReadyTrack()
-      }
+      this.$nextTick(() => {
+        this.measureAndUpdateTrackWidth()
+      })
     },
     updateScreenSize() {
       setTimeout(() => {
@@ -1085,6 +1120,12 @@ export default {
 .fullscreen .playerContainer {
   height: 200px;
 }
+@media (orientation: landscape) {
+  .fullscreen .playerContainer {
+    width: 50%;
+    left: 50%;
+  }
+}
 #playerContent {
   box-shadow: 0px -8px 8px #11111155;
 }
@@ -1096,6 +1137,7 @@ export default {
   transition: all 0.15s cubic-bezier(0.39, 0.575, 0.565, 1);
   transition-property: margin;
   bottom: 35px;
+  max-width: 100%;
 }
 .fullscreen #playerTrack {
   bottom: unset;
@@ -1112,13 +1154,45 @@ export default {
   border-radius: 3px;
   overflow: hidden;
 }
+@media (orientation: landscape) {
+  .fullscreen .cover-wrapper {
+    left: 25px !important;
+    top: 50px;
+    width: calc(50% - 25px) !important;
+    height: calc(100% - 85px) !important;
+  }
+  .fullscreen .cover-wrapper > div > div {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+  }
+  .fullscreen .cover-wrapper > div > div > div {
+    background-color: transparent;
+  }
+  .fullscreen .cover-wrapper img {
+    object-fit: contain;
+  }
+}
 
 .total-track {
   bottom: 215px;
   left: 0;
   right: 0;
 }
+@media (orientation: landscape) {
+  .fullscreen .total-track {
+    left: 50%;
+    width: 50%;
+  }
+}
 
+@media (orientation: landscape) {
+  .fullscreen .title-author-texts {
+    left: 50% !important;
+    width: 50% !important;
+  }
+}
 .title-author-texts {
   transition: all 0.15s cubic-bezier(0.39, 0.575, 0.565, 1);
   transition-property: left, bottom, width, height;
@@ -1135,11 +1209,21 @@ export default {
   font-size: 0.85rem;
   line-height: 1.5;
 }
+@media (orientation: landscape) {
+  .fullscreen .title-author-texts .title-text {
+    font-size: larger !important;
+  }
+}
 .title-author-texts .author-text {
   transition: all 0.15s cubic-bezier(0.39, 0.575, 0.565, 1);
   transition-property: font-size;
   font-size: 0.75rem;
   line-height: 1.2;
+}
+@media (orientation: landscape) {
+  .fullscreen .title-author-texts .author-text {
+    font-size: inherit !important;
+  }
 }
 
 .fullscreen .title-author-texts {

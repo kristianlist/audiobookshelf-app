@@ -175,8 +175,20 @@ export default {
     },
     playBookAtIndex(index) {
       this.playFromQueue(index)
+    },
+    libraryChanged(libraryId) {
+      // A collection belongs to a single library, so leave this page when a different library is
+      // selected rather than showing a collection that is not in the current library
+      if (!libraryId || libraryId !== this.collection.libraryId) {
+        this.$router.replace('/bookshelf/collections')
+      }
     }
   },
-  mounted() {}
+  mounted() {
+    this.$eventBus.$on('library-changed', this.libraryChanged)
+  },
+  beforeDestroy() {
+    this.$eventBus.$off('library-changed', this.libraryChanged)
+  }
 }
 </script>
