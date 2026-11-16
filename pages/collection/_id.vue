@@ -174,7 +174,10 @@ export default {
       }
     },
     playBookAtIndex(index) {
-      this.playFromQueue(index)
+      // The row index counts every book, but the queue only holds playable ones
+      const playableIndex = this.playableItems.indexOf(this.bookItems[index])
+      if (playableIndex < 0) return
+      this.playFromQueue(playableIndex)
     },
     libraryChanged(libraryId) {
       // A collection belongs to a single library, so leave this page when a different library is

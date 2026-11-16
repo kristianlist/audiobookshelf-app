@@ -152,14 +152,19 @@ class MediaProgressSyncer(
     Log.d(tag, "pause: Pausing progress syncer for $currentDisplayTitle")
     Log.d(tag, "pause: Last sync time $lastSyncTime")
 
+    val pausedSession = currentPlaybackSession
     val currentTime = playerNotificationService.getCurrentTimeSeconds()
     if (currentTime > 0) { // Current time should always be > 0 on pause
       sync(true, currentTime) { syncResult ->
-        lastSyncTime = 0L
-        Log.d(tag, "pause: Set last sync time 0 $lastSyncTime")
-        failedSyncs = 0
+        // Playback may have resumed, or the queue started the next item, while this sync was in flight.
+        //   Clearing lastSyncTime then would make every sync of that session skip as "not set"
+        if (!listeningTimerRunning) {
+          lastSyncTime = 0L
+          Log.d(tag, "pause: Set last sync time 0 $lastSyncTime")
+          failedSyncs = 0
+        }
 
-        currentPlaybackSession?.let { playbackSession ->
+        pausedSession?.let { playbackSession ->
           MediaEventManager.pauseEvent(playbackSession, syncResult)
         }
 
@@ -179,19 +184,26 @@ class MediaProgressSyncer(
   }
 
   fun finished(cb: () -> Unit) {
-    if (!listeningTimerRunning) return
-
-    listeningTimerTask?.cancel()
-    listeningTimerTask = null
-    listeningTimerRunning = false
+    // The pause fired when playback ends usually stops the timer first, so do not bail out here:
+    //   the caller's cb starts the next Android Auto podcast episode
+    if (listeningTimerRunning) {
+      listeningTimerTask?.cancel()
+      listeningTimerTask = null
+      listeningTimerRunning = false
+    }
+    val finishedSession = currentPlaybackSession ?: return cb()
     Log.d(tag, "finished: Stopping listening for $currentDisplayTitle")
 
-    sync(true, currentPlaybackSession?.duration ?: 0.0) { syncResult ->
-      reset()
+    // sync() skips when lastSyncTime is unset (cleared by pause) or under 1s old, and the item must be marked
+    //   finished on the server before the caller looks up the next unfinished episode
+    val now = System.currentTimeMillis()
+    if (lastSyncTime <= 0 || now - lastSyncTime < 1000L) lastSyncTime = now - 1000L
 
-      currentPlaybackSession?.let { playbackSession ->
-        MediaEventManager.finishedEvent(playbackSession, syncResult)
-      }
+    sync(true, finishedSession.duration) { syncResult ->
+      // Do not wipe a session that started while this sync was in flight
+      if (!listeningTimerRunning) reset()
+
+      MediaEventManager.finishedEvent(finishedSession, syncResult)
 
       cb()
     }
@@ -296,23 +308,25 @@ class MediaProgressSyncer(
         }
       }
     } else if (hasNetworkConnection && shouldSyncServer) {
-      AbsLogger.info("MediaProgressSyncer", "sync: Sending progress sync to server (title: \"$currentDisplayTitle\") (currentTime: $currentTime) (session id: ${currentSessionId}) (${DeviceManager.serverConnectionConfigName})")
+      // The callback can land after the next session has started, so it must not read currentSessionId
+      val sessionId = currentSessionId
+      AbsLogger.info("MediaProgressSyncer", "sync: Sending progress sync to server (title: \"$currentDisplayTitle\") (currentTime: $currentTime) (session id: $sessionId) (${DeviceManager.serverConnectionConfigName})")
 
-      apiHandler.sendProgressSync(currentSessionId, syncData) { syncSuccess, errorMsg ->
+      apiHandler.sendProgressSync(sessionId, syncData) { syncSuccess, errorMsg ->
         if (syncSuccess) {
-          AbsLogger.info("MediaProgressSyncer", "sync: Successfully synced progress (title: \"$currentDisplayTitle\") (currentTime: $currentTime) (session id: ${currentSessionId}) (${DeviceManager.serverConnectionConfigName})")
+          AbsLogger.info("MediaProgressSyncer", "sync: Successfully synced progress (title: \"$currentDisplayTitle\") (currentTime: $currentTime) (session id: $sessionId) (${DeviceManager.serverConnectionConfigName})")
 
           failedSyncs = 0
           playerNotificationService.alertSyncSuccess()
           lastSyncTime = System.currentTimeMillis()
-          DeviceManager.dbManager.removePlaybackSession(currentSessionId) // Remove session from db
+          DeviceManager.dbManager.removePlaybackSession(sessionId) // Remove session from db
         } else {
           failedSyncs++
           if (failedSyncs == 2) {
             playerNotificationService.alertSyncFailing() // Show alert in client
             failedSyncs = 0
           }
-          AbsLogger.error("MediaProgressSyncer", "sync: Progress sync failed (count: $failedSyncs) (title: \"$currentDisplayTitle\") (currentTime: $currentTime) (session id: $currentSessionId) (${DeviceManager.serverConnectionConfigName})")
+          AbsLogger.error("MediaProgressSyncer", "sync: Progress sync failed (count: $failedSyncs) (title: \"$currentDisplayTitle\") (currentTime: $currentTime) (session id: $sessionId) (${DeviceManager.serverConnectionConfigName})")
         }
         cb(SyncResult(true, syncSuccess, errorMsg))
       }

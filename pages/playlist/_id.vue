@@ -198,7 +198,10 @@ export default {
       }
     },
     playItemAtIndex(index) {
-      this.playFromQueue(index)
+      // The row index counts every playlist item, but the queue only holds playable ones
+      const playableIndex = this.playableItems.indexOf(this.playlistItems[index])
+      if (playableIndex < 0) return
+      this.playFromQueue(playableIndex)
     },
     playlistUpdated(playlist) {
       if (this.playlist.id !== playlist.id) return
