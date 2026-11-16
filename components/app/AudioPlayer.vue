@@ -745,6 +745,8 @@ export default {
       AbsAudioPlayer.playPlayer()
       this.startPlayInterval()
       this.isPlaying = true
+      // Repeat-one replays the same session, and the READY metadata that would clear this is not sent while backgrounded
+      this.isEnded = false
     },
     pause() {
       AbsAudioPlayer.pausePlayer()
@@ -938,7 +940,8 @@ export default {
         this.isLoading = false
       }
 
-      if (data.playerState === 'ENDED') {
+      // Only on the transition into ENDED so a repeated ENDED for the same item cannot advance the queue twice
+      if (data.playerState === 'ENDED' && !this.isEnded) {
         console.log('[AudioPlayer] Playback ended')
         this.$eventBus.$emit('playback-ended')
       }

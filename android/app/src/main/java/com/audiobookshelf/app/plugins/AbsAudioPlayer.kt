@@ -63,8 +63,9 @@ class AbsAudioPlayer : Plugin() {
         }
 
         override fun onMetadata(metadata: PlaybackMetadata) {
-          // Skip frequent metadata updates when app is backgrounded to prevent event queue buildup
-          if (!isInForeground) return
+          // Skip frequent metadata updates when app is backgrounded to prevent event queue buildup,
+          //   but always deliver ENDED: the playback queue only advances to the next item when the UI receives it
+          if (!isInForeground && metadata.playerState != PlayerState.ENDED) return
           notifyListeners("onMetadata", JSObject(jacksonMapper.writeValueAsString(metadata)))
         }
 
