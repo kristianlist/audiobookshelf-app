@@ -34,6 +34,7 @@ export default {
       onSleepTimerEndedListener: null,
       onSleepTimerSetListener: null,
       onMediaPlayerChangedListener: null,
+      onQueueAdvancedListener: null,
       sleepInterval: null,
       currentEndOfChapterTime: 0,
       serverLibraryItemId: null,
@@ -41,6 +42,18 @@ export default {
     }
   },
   mixins: [CellularPermissionHelpers],
+  watch: {
+    nativeQueueState: {
+      handler(value) {
+        // Android continues the queue natively because the WebView is frozen while the screen is off
+        if (this.$platform !== 'android') return
+        AbsAudioPlayer.setPlaybackQueue(JSON.parse(value)).catch((error) => {
+          console.error('[AudioPlayerContainer] Failed to send queue to native player', error)
+        })
+      },
+      immediate: true
+    }
+  },
   computed: {
     bookmarks() {
       if (!this.serverLibraryItemId) return []
@@ -51,6 +64,19 @@ export default {
     },
     currentPlaybackSession() {
       return this.$store.state.currentPlaybackSession
+    },
+    nativeQueueState() {
+      // Serialized so the watcher fires only when something the native player uses changes
+      const queue = this.$store.state.queue
+      const items = queue.isActive
+        ? queue.items.map((item) => ({
+            libraryItemId: item.serverLibraryItemId || item.libraryItemId,
+            episodeId: item.serverEpisodeId || item.episodeId || null,
+            localLibraryItemId: item.localLibraryItemId || null,
+            localEpisodeId: item.localEpisodeId || null
+          }))
+        : []
+      return JSON.stringify({ items, currentIndex: queue.currentIndex, repeatMode: queue.repeatMode })
     }
   },
   methods: {
@@ -338,6 +364,13 @@ export default {
         console.log('[AudioPlayerContainer] Queue ended, no more items')
       }
     },
+    onQueueAdvanced({ libraryItemId, episodeId }) {
+      // The native player started the next queue item itself, so only the queue position and ids need catching up
+      console.log('[AudioPlayerContainer] Native player advanced queue to', libraryItemId, episodeId)
+      this.serverLibraryItemId = libraryItemId
+      this.serverEpisodeId = episodeId || null
+      this.$store.dispatch('queue/syncCurrentIndex', { libraryItemId, episodeId })
+    },
     async onQueueSkipNext() {
       const payload = await this.$store.dispatch('queue/playNext')
       if (payload) {
@@ -564,6 +597,7 @@ export default {
     this.onSleepTimerEndedListener = await AbsAudioPlayer.addListener('onSleepTimerEnded', this.onSleepTimerEnded)
     this.onSleepTimerSetListener = await AbsAudioPlayer.addListener('onSleepTimerSet', this.onSleepTimerSet)
     this.onMediaPlayerChangedListener = await AbsAudioPlayer.addListener('onMediaPlayerChanged', this.onMediaPlayerChanged)
+    this.onQueueAdvancedListener = await AbsAudioPlayer.addListener('onQueueAdvanced', this.onQueueAdvanced)
 
     this.playbackSpeed = this.$store.getters['user/getUserSetting']('playbackRate')
     console.log(`[AudioPlayerContainer] Init Playback Speed: ${this.playbackSpeed}`)
@@ -589,6 +623,7 @@ export default {
     this.onSleepTimerEndedListener?.remove()
     this.onSleepTimerSetListener?.remove()
     this.onMediaPlayerChangedListener?.remove()
+    this.onQueueAdvancedListener?.remove()
 
     this.$eventBus.$off('abs-ui-ready', this.onReady)
     this.$eventBus.$off('play-item', this.playLibraryItem)

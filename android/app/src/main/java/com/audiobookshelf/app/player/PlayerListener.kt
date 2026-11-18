@@ -142,9 +142,13 @@ class PlayerListener(var playerNotificationService:PlayerNotificationService) : 
       }
       if (playerNotificationService.currentPlayer.playbackState == Player.STATE_ENDED) {
         Log.d(tag, "STATE_ENDED")
-        playerNotificationService.sendClientMetadata(PlayerState.ENDED)
+        // The playback queue continues natively because the WebView is frozen while the screen is off.
+        //   The UI is not told ENDED in that case, or it would advance its own queue a second time
+        if (!playerNotificationService.queueHandoff.playNext()) {
+          playerNotificationService.sendClientMetadata(PlayerState.ENDED)
 
-        playerNotificationService.handlePlaybackEnded()
+          playerNotificationService.handlePlaybackEnded()
+        }
       }
       if (playerNotificationService.currentPlayer.playbackState == Player.STATE_IDLE) {
         Log.d(tag, "STATE_IDLE")

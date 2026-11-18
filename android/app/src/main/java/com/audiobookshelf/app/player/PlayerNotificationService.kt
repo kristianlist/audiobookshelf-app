@@ -119,6 +119,7 @@ class PlayerNotificationService : MediaBrowserServiceCompat() {
   private var channelName = "Audiobookshelf Channel"
 
   var currentPlaybackSession: PlaybackSession? = null
+  val queueHandoff = PlaybackQueueHandoff(this)
   private var initialPlaybackRate: Float? = null
 
   private val metadataScope = CoroutineScope(Dispatchers.Main + SupervisorJob())

@@ -58,6 +58,10 @@ class AbsAudioPlayerWeb extends WebPlugin {
   }
 
   // PluginMethod
+  // Only Android uses the queue natively, to continue it while the WebView is frozen
+  async setPlaybackQueue() {}
+
+  // PluginMethod
   async prepareLibraryItem({ libraryItemId, episodeId, playWhenReady, startTime, playbackRate }) {
     console.log('[AbsAudioPlayer] Prepare library item', libraryItemId)
 

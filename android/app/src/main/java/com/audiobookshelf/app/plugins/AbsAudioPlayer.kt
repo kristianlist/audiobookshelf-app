@@ -10,6 +10,7 @@ import com.audiobookshelf.app.media.MediaEventManager
 import com.audiobookshelf.app.player.CastManager
 import com.audiobookshelf.app.player.PlayerListener
 import com.audiobookshelf.app.player.PlayerNotificationService
+import com.audiobookshelf.app.player.QueueItem
 import com.audiobookshelf.app.server.ApiHandler
 import com.fasterxml.jackson.core.json.JsonReadFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -35,6 +36,9 @@ class AbsAudioPlayer : Plugin() {
 
   // Track foreground state to avoid flooding WebView with events while backgrounded
   private var isInForeground: Boolean = true
+
+  // Queue received before the player service was ready, applied once it is
+  private var pendingQueue: Triple<List<QueueItem>, Int, String>? = null
 
   override fun load() {
     mainActivity = (activity as MainActivity)
@@ -118,6 +122,16 @@ class AbsAudioPlayer : Plugin() {
       })
 
       MediaEventManager.clientEventEmitter = playerNotificationService.clientEventEmitter
+
+      playerNotificationService.queueHandoff.onAdvanced = { index, item ->
+        val ret = JSObject()
+        ret.put("index", index)
+        ret.put("libraryItemId", item.libraryItemId)
+        ret.put("episodeId", item.episodeId)
+        notifyListeners("onQueueAdvanced", ret)
+      }
+      pendingQueue?.let { (items, currentIndex, repeatMode) -> applyPlaybackQueue(items, currentIndex, repeatMode) }
+      pendingQueue = null
     }
     mainActivity.pluginCallback = foregroundServiceReady
   }
@@ -291,6 +305,37 @@ class AbsAudioPlayer : Plugin() {
         }
       }
     }
+  }
+
+  // Receives the playback queue from store/queue.js so the service can continue it while the WebView is frozen
+  @PluginMethod
+  fun setPlaybackQueue(call: PluginCall) {
+    val itemsArray = call.getArray("items") ?: JSArray()
+    val items = mutableListOf<QueueItem>()
+    for (i in 0 until itemsArray.length()) {
+      val obj = itemsArray.getJSONObject(i)
+      val libraryItemId = obj.optString("libraryItemId", "")
+      if (libraryItemId.isEmpty()) continue
+      items.add(QueueItem(libraryItemId, obj.optStringOrNull("episodeId"), obj.optStringOrNull("localLibraryItemId"), obj.optStringOrNull("localEpisodeId")))
+    }
+    val currentIndex = call.getInt("currentIndex", -1) ?: -1
+    val repeatMode = call.getString("repeatMode", "none") ?: "none"
+
+    Handler(Looper.getMainLooper()).post {
+      if (::playerNotificationService.isInitialized) applyPlaybackQueue(items, currentIndex, repeatMode)
+      else pendingQueue = Triple(items, currentIndex, repeatMode)
+    }
+    call.resolve()
+  }
+
+  private fun applyPlaybackQueue(items: List<QueueItem>, currentIndex: Int, repeatMode: String) {
+    if (items.isEmpty()) playerNotificationService.queueHandoff.clear()
+    else playerNotificationService.queueHandoff.setQueue(items, currentIndex, repeatMode)
+  }
+
+  private fun JSONObject.optStringOrNull(key: String): String? {
+    if (isNull(key)) return null
+    return optString(key, "").ifEmpty { null }
   }
 
   @PluginMethod
